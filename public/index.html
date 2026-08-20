@@ -107,6 +107,185 @@
 </script>
 </head>
 <body>
+<style>
+body{margin:0;background:#fafafa;color:#212121;}
+header{background:#fff;border-bottom:1px solid #eee;padding:18px 24px;display:flex;align-items:center;gap:14px;}
+header img{width:38px;height:38px;border-radius:8px;}
+header .t h1{font-size:20px;margin:0;font-weight:600;}
+header .t p{margin:2px 0 0;font-size:12.5px;color:#777;}
+main{max-width:760px;margin:28px auto 60px;padding:0 18px;}
+.card{background:#fff;border:1px solid #eee;border-radius:12px;padding:20px;margin-bottom:22px;}
+.card h2{margin:0 0 12px;font-size:15px;font-weight:600;}
+label{display:block;font-size:12.5px;color:#666;margin:12px 0 5px;}
+input[type=text],textarea{width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:8px;padding:10px 12px;font-size:14px;background:#fff;color:#212121;outline:none;}
+input[type=text]:focus,textarea:focus{border-color:#ffa100;}
+textarea{min-height:140px;resize:vertical;font-family:ui-monospace,Menlo,monospace;font-size:13px;}
+button{margin-top:14px;background:#ffa100;color:#fff;border:none;border-radius:8px;padding:11px 22px;font-size:14px;cursor:pointer;}
+button:disabled{opacity:.6;cursor:default;}
+.msg{font-size:13px;margin-top:12px;}
+.msg.ok{color:#2e7d32;}
+.msg.err{color:#c62828;}
+.msg a{color:#039be5;word-break:break-all;}
+ul#recent{list-style:none;margin:0;padding:0;}
+ul#recent li{padding:10px 4px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;gap:12px;align-items:baseline;}
+ul#recent li a{color:#039be5;text-decoration:none;font-size:14px;word-break:break-all;}
+ul#recent li a:hover{text-decoration:underline;}
+ul#recent li span{font-size:11.5px;color:#999;white-space:nowrap;}
+pre.dump{background:#0f172a;color:#e2e8f0;border-radius:8px;padding:14px;font-size:12.5px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,monospace;}
+.meta{font-size:12.5px;color:#777;margin-bottom:10px;}
+.meta b{color:#333;}
+.grecaptcha-badge{visibility:hidden;}
+.rc-note{font-size:11px;color:#aaa;margin-top:10px;}
+footer{text-align:center;font-size:12px;color:#aaa;padding:20px;}
+</style>
+<header>
+  <img src="/logos/logo.png" alt="CookieBin logo" />
+  <div class="t">
+    <h1>CookieBin</h1>
+    <p>A service to store cookies publicly for anyone to use</p>
+  </div>
+</header>
+<main>
+  <section class="card" id="dumpCard" hidden>
+    <h2>Cookie dump</h2>
+    <div class="meta" id="dumpMeta"></div>
+    <pre class="dump" id="dumpContent"></pre>
+    <button type="button" id="copyBtn">Copy dump</button>
+    <div class="msg" id="dumpMsg"></div>
+  </section>
+
+  <section class="card">
+    <h2>Share a cookie dump</h2>
+    <label for="site">Website</label>
+    <input type="text" id="site" placeholder="example.com" maxlength="200" />
+    <label for="content">Cookie dump</label>
+    <textarea id="content" placeholder="Paste the cookie dump here &mdash; document.cookie string, JSON export, Netscape format&hellip;"></textarea>
+    <button type="button" id="shareBtn" disabled>Share publicly</button>
+    <div class="msg" id="shareMsg"></div>
+    <div class="rc-note">This site is protected by reCAPTCHA and the Google Privacy Policy and Terms of Service apply.</div>
+  </section>
+
+  <section class="card">
+    <h2>Recent dumps</h2>
+    <ul id="recent"><li><span>Loading&hellip;</span></li></ul>
+  </section>
+</main>
+<footer>CookieBin &mdash; A Bin For Cookies</footer>
+<div id="recaptcha-slot"></div>
+<script src="https://www.google.com/recaptcha/api.js?onload=recaptchaInit&render=explicit" async defer></script>
+<script>
+var SITEKEY = '6LcZoI8tAAAAADJc8lEEYIfRcDZRaXDHqMJOQhYR';
+var API = /(^|\.)vercel\.app$/.test(location.hostname) || location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  ? ''
+  : 'https://cookiebin.vercel.app';
+var widgetId = null;
+
+function recaptchaInit() {
+  widgetId = grecaptcha.render('recaptcha-slot', {
+    sitekey: SITEKEY,
+    size: 'invisible',
+    callback: sendDump
+  });
+  document.getElementById('shareBtn').disabled = false;
+}
+
+function showMsg(id, text, ok) {
+  var el = document.getElementById(id);
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+  el.innerHTML = text;
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+function dumpUrl(id) {
+  return location.origin + location.pathname + '?d=' + id;
+}
+
+document.getElementById('shareBtn').addEventListener('click', function () {
+  var site = document.getElementById('site').value.trim();
+  var content = document.getElementById('content').value.trim();
+  if (!site) return showMsg('shareMsg', 'Please enter the website these cookies belong to.', false);
+  if (!content) return showMsg('shareMsg', 'Please paste a cookie dump first.', false);
+  showMsg('shareMsg', 'Verifying&hellip;', true);
+  if (widgetId === null) return showMsg('shareMsg', 'reCAPTCHA is still loading, try again in a second.', false);
+  grecaptcha.execute(widgetId);
+});
+
+function sendDump(token) {
+  var site = document.getElementById('site').value.trim();
+  var content = document.getElementById('content').value.trim();
+  showMsg('shareMsg', 'Sharing&hellip;', true);
+  fetch(API + '/api/dumps', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ site: site, content: content, token: token })
+  })
+    .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+    .then(function (res) {
+      grecaptcha.reset(widgetId);
+      if (!res.ok) {
+        showMsg('shareMsg', res.j.error === 'recaptcha_failed' ? 'reCAPTCHA check failed, please try again.' : 'Something went wrong, please try again.', false);
+        return;
+      }
+      var url = dumpUrl(res.j.id);
+      showMsg('shareMsg', 'Shared! Link: <a href="' + url + '">' + url + '</a>', true);
+      document.getElementById('content').value = '';
+      loadRecent();
+    })
+    .catch(function () {
+      grecaptcha.reset(widgetId);
+      showMsg('shareMsg', 'Network error, please try again.', false);
+    });
+}
+
+function loadRecent() {
+  fetch(API + '/api/dumps')
+    .then(function (r) { return r.json(); })
+    .then(function (rows) {
+      var ul = document.getElementById('recent');
+      if (!Array.isArray(rows) || !rows.length) {
+        ul.innerHTML = '<li><span>No dumps yet &mdash; be the first.</span></li>';
+        return;
+      }
+      ul.innerHTML = rows.map(function (d) {
+        return '<li><a href="?d=' + esc(d.id) + '">' + esc(d.site) + '</a><span>' +
+          new Date(d.created_at).toLocaleString() + ' &middot; ' + d.views + ' views</span></li>';
+      }).join('');
+    })
+    .catch(function () {
+      document.getElementById('recent').innerHTML = '<li><span>Could not load dumps.</span></li>';
+    });
+}
+
+function loadDump(id) {
+  fetch(API + '/api/dumps/' + encodeURIComponent(id))
+    .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+    .then(function (res) {
+      if (!res.ok) return;
+      var d = res.j;
+      document.getElementById('dumpCard').hidden = false;
+      document.getElementById('dumpMeta').innerHTML =
+        '<b>' + esc(d.site) + '</b> &middot; ' + new Date(d.created_at).toLocaleString() +
+        ' &middot; ' + d.views + ' views';
+      document.getElementById('dumpContent').textContent = d.content;
+      document.getElementById('copyBtn').onclick = function () {
+        navigator.clipboard.writeText(d.content).then(function () {
+          showMsg('dumpMsg', 'Copied to clipboard.', true);
+        });
+      };
+      window.scrollTo(0, 0);
+    })
+    .catch(function () {});
+}
+
+var params = new URLSearchParams(location.search);
+if (params.get('d')) loadDump(params.get('d'));
+loadRecent();
+</script>
 </body>
 </html>
 
